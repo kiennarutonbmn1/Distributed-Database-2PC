@@ -1,224 +1,181 @@
-import sqlite3
-import os
-import random
-import msvcrt
-from datetime import datetime
-
-
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_A_PATH = os.path.join(BASE_DIR, 'bank_a.db')
-DB_B_PATH = os.path.join(BASE_DIR, 'bank_b.db')
-LOG_FILE_PATH = os.path.join(BASE_DIR, 'log.txt')
-
-def ghi_log(thong_diep):
-    """Hàm in thông báo ra Terminal đồng thời lưu vào file log.txt"""
-    thoi_gian = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    noidung_log = f"[{thoi_gian}] {thong_diep}"
-    
-    print(thong_diep)
-    
-    with open(LOG_FILE_PATH, "a", encoding="utf-8") as f:
-        f.write(noidung_log + "\n")
-
-
-def khoi_tao_database_sach():
-    with sqlite3.connect(DB_A_PATH) as conn_a:
-        cursor = conn_a.cursor()
-
-        cursor.execute('''CREATE TABLE IF NOT EXISTS Accounts (
-                            account_number TEXT PRIMARY KEY, account_name TEXT, balance REAL)''')
-        cursor.execute('''CREATE TABLE IF NOT EXISTS Tx_Logs (
-                            tx_id TEXT PRIMARY KEY, from_account TEXT, to_account TEXT, amount REAL, state TEXT)''')
-        cursor.execute("INSERT OR IGNORE INTO Accounts VALUES ('111111', 'Nguyen Van A', 1000.0)")
-        conn_a.commit()
-
-    with sqlite3.connect(DB_B_PATH) as conn_b:
-        cursor = conn_b.cursor()
-
-        cursor.execute('''CREATE TABLE IF NOT EXISTS Accounts (
-                            account_number TEXT PRIMARY KEY, account_name TEXT, balance REAL)''')
-        cursor.execute('''CREATE TABLE IF NOT EXISTS Tx_Logs (
-                            tx_id TEXT PRIMARY KEY, from_account TEXT, to_account TEXT, amount REAL, state TEXT)''')
-        cursor.execute("INSERT OR IGNORE INTO Accounts VALUES ('222222', 'Tran Thi B', 500.0)")
-        cursor.execute("INSERT OR IGNORE INTO Accounts VALUES ('333333', 'Tran Thi C', 700.0)")
-        conn_b.commit()
-
-def lay_thong_tin_tk_bank_a():
-    with sqlite3.connect(DB_A_PATH) as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT account_name, balance FROM Accounts WHERE account_number = '111111'")
-        return cursor.fetchone()
-
-def kiem_tra_tk_bank_b(stk_nhan):
-    with sqlite3.connect(DB_B_PATH) as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT account_name, balance FROM Accounts WHERE account_number = ?", (stk_nhan,))
-        return cursor.fetchone()
-    
-
-def kiem_tra_va_phuc_hoi_sau_crash():
-    print("\n[HỆ THỐNG] Đang kiểm tra tự động phục hồi sau sự cố...")
-    ghi_log("\n[HỆ THỐNG] Đang kiểm tra tự động phục hồi sau sự cố...")
-    tx_treo_a = []
-    with sqlite3.connect(DB_A_PATH) as conn_a:
-        cursor = conn_a.cursor()
-        cursor.execute("SELECT tx_id, from_account, to_account, amount FROM Tx_Logs WHERE state = 'READY'")
-        tx_treo_a = cursor.fetchall()
-
-    if not tx_treo_a:
-        print(" -> Không có giao dịch nào bị treo. Hệ thống an toàn.")
-        return
-
-    ghi_log(f"PHÁT HIỆN CÓ {len(tx_treo_a)} GIAO DỊCH BỊ TREO DO CRASH TRƯỚC ĐÓ!")
-
-    print(f" -> PHÁT HIỆN CÓ {len(tx_treo_a)} GIAO DỊCH BỊ TREO!")
-    
-    for tx_id, from_acc, to_acc, amount in tx_treo_a:
-        print(f"    [*] Đang tự động xử lý phục hồi động cho Giao dịch: {tx_id}")
-        print(f"        [Thông tin log] Chuyển từ: {from_acc} -> Đến: {to_acc} | Số tiền: {amount}$")
-        ghi_log(f"    [*] Đang tự động xử lý phục hồi động cho Giao dịch: {tx_id}")
-        ghi_log(f"        [Thông tin log] Chuyển từ: {from_acc} -> Đến: {to_acc} | Số tiền: {amount}$")
-        
-        with sqlite3.connect(DB_B_PATH) as conn_b:
-            cursor_b = conn_b.cursor()
-            cursor_b.execute("SELECT state FROM Tx_Logs WHERE tx_id = ?", (tx_id,))
-            res_b = cursor_b.fetchone()
-            
-        if res_b and res_b[0] == 'READY':
-
-            with sqlite3.connect(DB_A_PATH) as conn_a:
-                conn_a.execute("UPDATE Tx_Logs SET state = 'COMMIT' WHERE tx_id = ?", (tx_id,))
-                conn_a.commit()
-                ghi_log("[Bank_A] State: COMMIT")
-            
-            with sqlite3.connect(DB_B_PATH) as conn_b:
-                conn_b.cursor().execute("UPDATE Accounts SET balance = balance + ? WHERE account_number = ?", (amount, to_acc))
-                conn_b.cursor().execute("UPDATE Tx_Logs SET state = 'COMMIT' WHERE tx_id = ?", (tx_id,))
-                conn_b.commit()
-                ghi_log("[Bank_B] State: COMMIT")
-
+from func import *
 
 def main():
-
+    # reset_tx_logs()
     khoi_tao_database_sach()
-    kiem_tra_va_phuc_hoi_sau_crash()
-    print("==================================================")
-    thong_tin_a = lay_thong_tin_tk_bank_a()
-    if thong_tin_a is None:
-        print("Lỗi: Không tìm thấy tài khoản Ngân hàng A trong Cơ sở dữ liệu!")
-        return
-    ten_a, so_du_a = thong_tin_a
-    print(" THÔNG TIN TÀI KHOẢN NGUỒN (NGÂN HÀNG A):")
-    print(f" -> Số tài khoản: 111111")
-    print(f" -> Chủ tài khoản: {ten_a}")
-    print(f" -> SỐ DƯ HIỆN TẠI : {so_du_a}$") 
-    print("==================================================")
-    
-    while True:
-        while True:
-            stk_nhan = input("\n Nhập số tài khoản muốn chuyển cho ngân hàng B: ").strip()
-            thong_tin_b = kiem_tra_tk_bank_b(stk_nhan)
-            
-            if thong_tin_b:
-                ten_b, so_du_b_truoc = thong_tin_b
-                print(f"Tìm thấy tài khoản đích: {ten_b}")
-                break
-            else:
-                print("Số tài khoản không tồn tại ở Ngân hàng B!")
 
-        print(f"\n[Thông báo] Số dư khả dụng của bạn là: {so_du_a}$")
-        
-        quay_lai_stk = False
-        
-        while True:
-            print("Nhập số tiền cần chuyển (Hoặc ấn phím 0 để QUAY LẠI): ", end='', flush=True)
-            
-            phim = msvcrt.getch()
-            
-            if phim == b'0':
-                print("0") 
-                quay_lai_stk = True
-                break
-            
-            ky_tu_dau = phim.decode('utf-8', errors='ignore')
-            print(ky_tu_dau, end='', flush=True) 
-            
-            nhap_tiep = input() 
-            chuoi_so_tien = ky_tu_dau + nhap_tiep
-            
-            try:
-                so_tien_chuyen = float(chuoi_so_tien)
-                
-                if so_tien_chuyen <= 0 or so_tien_chuyen > so_du_a:
-                    print(f"\nSố tiền nhập không hợp lệ! Phải lớn hơn 0 và nhỏ hơn hoặc bằng số dư hiện tại ({so_du_a}$).")
-                    print("Vui lòng nhập lại!")
-                else:
-                    print(f"\nSố tiền {so_tien_chuyen}$ hợp lệ.")
-                    break
-            except ValueError:
-                print("\nVui lòng chỉ nhập số ký tự số hợp lệ!")
 
-        if quay_lai_stk:
+     
+    while True: 
+        kiem_tra_va_phuc_hoi_sau_crash()
+        while True:
+            print("\nCHỌN KỊCH BẢN CHẠY CHƯƠNG TRÌNH:")
+            print("1. Chạy bình thường (Thành công hoàn toàn)")
+            print("2. Mô phỏng CRASH khi cả 2 cùng ở trạng thái READY")
+            print("3. Mô phỏng CRASH khi State Bank_A ở COMMIT mà State Bank_B chưa COMMIT)")
+            print("4. Mô phỏng CRASH khi State Bank_A bị lỗi hệ thống mà State Bank_B chuyển sang  COMMIT)")
+            print("5. Mô phỏng CRASH khi State Bank_A ở ABORT mà State Bank_B ở COMMIT)")
+            chon_kb = input("Chọn kịch bản để chạy: ").strip()
+            if chon_kb in ['1', '2', '3', '4', '5']: break
+
+        stk_a, ten_a, so_du_a = nhap_tai_khoan_a()
+        
+        print("\n==================================================")
+        print(" THÔNG TIN TÀI KHOẢN NGUỒN (NGÂN HÀNG A):")
+        print(f" -> Số tài khoản: {stk_a}")
+        print(f" -> Chủ tài khoản: {ten_a}")
+        print(f" -> SỐ DƯ HIỆN TẠI : {so_du_a}$") 
+        print("==================================================")
+        
+        try:
+            stk_nhan = input("\nNhập số tài khoản đích đến (Bank B): ").strip()
+        except KeyboardInterrupt:
+            print("\n\nĐã nhận lệnh dừng từ người dùng. Đang thoát chương trình...")
+            break 
+        thong_tin_b = kiem_tra_tk_bank_b(stk_nhan)
+        
+        if not thong_tin_b:
+            print("Số tài khoản không tồn tại ở Ngân hàng B! Giao dịch bị hủy.")
+            input("\nNhấn Enter để quay lại màn hình chính...")
             continue
             
-        break
-    
-    print("\nCHỌN KỊCH BẢN CHẠY CHƯƠNG TRÌNH:")
-    print("1. Chạy bình thường (Thành công hoàn toàn)")
-    print("2. Mô phỏng CRASH (Sập nguồn ngay khi vừa READY)")
-    chon_kb = input("Nhập lựa chọn (1 hoặc 2): ").strip()
+        ten_b, so_du_b_truoc = thong_tin_b
+        print(f"Tìm thấy tài khoản đích: {ten_b}")
 
-    tx_id = f"TX_{random.randint(1000, 9999)}"
-    ghi_log(f"\n--- BẮT ĐẦU TRANSACTION: {tx_id} ---")
-    ghi_log("[Coordinator] State: INITIAL -> Đang khởi tạo giao dịch.")
-    ghi_log("[Coordinator] Sent PREPARE to Bank_A and Bank_B")
+        if so_du_a <= 0:
+            tx_id = f"TX_{random.randint(1000, 9999)}"
+  
+            with sqlite3.connect(DB_A_PATH) as conn_a:
+                conn_a.execute("INSERT INTO Tx_Logs VALUES (?, ?, ?, ?, 'ABORT')", (tx_id, stk_a, stk_nhan, 0))
+                ghi_log(f"[{tx_id}] Trạng thái: ABORT (Người dùng không đủ số dư để giao dịch)")
+            with sqlite3.connect(DB_B_PATH) as conn_b:
+                conn_b.execute("INSERT INTO Tx_Logs VALUES (?, ?, ?, ?, 'ABORT')", (tx_id, stk_a, stk_nhan, 0))
+                ghi_log(f"[{tx_id}] Trạng thái: ABORT (Người dùng không đủ số dư để giao dịch)")
+            
+            print(f"\n[!] Lỗi: Số dư của bạn là {so_du_a}$. Không đủ điều kiện thực hiện giao dịch.")
+            input("\nNhấn Enter để quay lại màn hình chính...")
+            continue
+
+        tx_id = f"TX_{random.randint(1000, 9999)}"
+        ghi_log(f"--- KHỞI TẠO GIAO DỊCH MỚI: {tx_id} ---")
+        
+        with sqlite3.connect(DB_A_PATH) as conn_a:
+            conn_a.execute("INSERT INTO Tx_Logs VALUES (?, ?, ?, ?, 'INITIAL')", (tx_id, stk_a , stk_nhan, 0))
+            ghi_log(f"[{tx_id}] Trạng thái Bank_A: INITIAL ")
+        with sqlite3.connect(DB_B_PATH) as conn_b:
+            conn_b.execute("INSERT INTO Tx_Logs VALUES (?, ?, ?, ?, 'INITIAL')", (tx_id, stk_a, stk_nhan, 0))
+            ghi_log(f"[{tx_id}] Trạng thái Bank_B: INITIAL ")
+            
+
+        print(f"\n[Thông báo] Số dư khả dụng của bạn là: {so_du_a}$")
+        while True:
+            chuoi_so_tien = input("Nhập số tiền cần chuyển: ").strip()
+            try:
+                so_tien_chuyen = float(chuoi_so_tien)
+                if so_tien_chuyen <= 0 or so_tien_chuyen > so_du_a:
+                    print("Số tiền nhập không hợp lệ hoặc vượt quá số dư! Vui lòng nhập lại!")
+                else:
+                    break
+            except ValueError:
+                print("Vui lòng chỉ nhập số hợp lệ!")
+                
+
+        with sqlite3.connect(DB_A_PATH) as conn_a:
+            conn_a.execute("UPDATE Tx_Logs SET amount = ? WHERE tx_id = ?", (so_tien_chuyen, tx_id))
+        with sqlite3.connect(DB_B_PATH) as conn_b:
+            conn_b.execute("UPDATE Tx_Logs SET amount = ? WHERE tx_id = ?", (so_tien_chuyen, tx_id))
+        
+        #KB3
+        if chon_kb == '3':
+            with sqlite3.connect(DB_A_PATH) as conn_a:
+                conn_a.execute("UPDATE Tx_Logs SET state = 'READY' WHERE tx_id = ?", (tx_id,))
+                ghi_log(f"[{tx_id}] Trạng thái Bank_A: READY ")
+            ghi_log(f"[{tx_id}] [LỖI] Bank_B không nhận được phản hồi.")
+        #KB4
+        elif chon_kb =='4':
+            ghi_log(f"[{tx_id}] [LỖI]: Bank_A Gặp sự cố!")
+            with sqlite3.connect(DB_B_PATH) as conn_b:
+                conn_b.execute("UPDATE Accounts SET balance = balance + ? WHERE account_number = ?", (so_tien_chuyen, stk_nhan))
+                conn_b.execute("UPDATE Tx_Logs SET state = 'COMMIT' WHERE tx_id = ?", (tx_id,))
+                conn_b.commit()
+                ghi_log(f"[{tx_id}] Bank_B: Cộng tiền thành công, chuyển STATE = 'COMMIT'.")
+            
+            
+            input("Bank_A lỗi máy chủ vui lòng thử lại sau nhấn Enter để quay về menu chính...")
+            continue
+            
+        else:
+            with sqlite3.connect(DB_A_PATH) as conn_a:
+                conn_a.execute("UPDATE Tx_Logs SET state = 'READY' WHERE tx_id = ?", (tx_id,))
+                ghi_log(f"[{tx_id}] Trạng thái Bank_A: READY ")
+            with sqlite3.connect(DB_B_PATH) as conn_b:
+                conn_b.execute("UPDATE Tx_Logs SET state = 'READY' WHERE tx_id = ?", (tx_id,))
+                ghi_log(f"[{tx_id}] Trạng thái Bank_B: READY ")
+
+        print("\n[Hệ thống] Đã chuẩn bị xong (READY). Sẵn sàng xác nhận giao dịch.")
 
 
-    print(f"\n--- BẮT ĐẦU TRANSACTION: {tx_id} ---")
-    
-    # PHASE 1: PREPARE
-    with sqlite3.connect(DB_A_PATH) as conn_a:
-        cursor = conn_a.cursor()
-        cursor.execute("UPDATE Accounts SET balance = balance - ? WHERE account_number = '111111'", (so_tien_chuyen,))
+        while True:
+            xac_nhan = input(f"\nBạn có chắc chắn muốn chuyển {so_tien_chuyen}$ tới tài khoản {stk_nhan} không? (yes/no): ").strip().lower()
+            
+            if xac_nhan == 'yes':
+                print("\nGiao dịch đã được xác nhận và thực hiện.")
+                break
+            
+            elif xac_nhan == 'no':
+                with sqlite3.connect(DB_A_PATH) as conn_a:
+                    conn_a.execute("UPDATE Tx_Logs SET state = 'ABORT' WHERE tx_id = ?", (tx_id,))
+                    ghi_log(f"[{tx_id}] Trạng thái: ABORT (Người dùng hủy giao dịch)")
+                if chon_kb == '5':
+                    with sqlite3.connect(DB_B_PATH) as conn_b:
+                        conn_b.execute("UPDATE Accounts SET balance = balance + ? WHERE account_number = ?", (so_tien_chuyen, stk_nhan))
+                        conn_b.execute("UPDATE Tx_Logs SET state = 'COMMIT' WHERE tx_id = ?", (tx_id,))
+                        conn_b.commit()
+                    ghi_log(f"[{tx_id}] MÔ PHỎNG LỖI: Bank_B Trạng thái: COMMIT")
+                else:
+                    with sqlite3.connect(DB_B_PATH) as conn_b:
+                        conn_b.execute("UPDATE Tx_Logs SET state = 'ABORT' WHERE tx_id = ?", (tx_id,))
+                        conn_b.commit()
+                    print("\nĐã hủy giao dịch thành công!")
+                xac_nhan = 'abort_loop'
+                break 
+            
+            else:
+                print("Lựa chọn không hợp lệ! Vui lòng chỉ nhập 'yes' để xác nhận hoặc 'no' để hủy.")
 
-        cursor.execute("INSERT INTO Tx_Logs VALUES (?, ?, ?, ?, 'READY')", (tx_id, '111111', stk_nhan, so_tien_chuyen))
-        conn_a.commit()
-        ghi_log("[Bank_A] State: READY ")
+        if xac_nhan == 'abort_loop':
+            print("Đã hủy giao dịch.")
+            input("\nNhấn Enter để quay lại màn hình chính...")
+            continue
 
-    with sqlite3.connect(DB_B_PATH) as conn_b:
-        cursor = conn_b.cursor()
 
-        cursor.execute("INSERT INTO Tx_Logs VALUES (?, ?, ?, ?, 'READY')", (tx_id, '111111', stk_nhan, so_tien_chuyen))
-        conn_b.commit()
-        ghi_log("[Bank_B] State: READY")
+        if chon_kb == '2':
+            input("\nNhấn Enter để tiếp tục")
+            continue
 
-    if chon_kb == '2':
-        os._exit(0)
+        with sqlite3.connect(DB_A_PATH) as conn_a:
+            conn_a.execute("UPDATE Accounts SET balance = balance - ? WHERE account_number = '111111'", (so_tien_chuyen,))
+            conn_a.execute("UPDATE Tx_Logs SET state = 'COMMIT' WHERE tx_id = ?", (tx_id,))
+            conn_a.commit()
+            ghi_log(f"[{tx_id}] Bank_A: Trừ tiền thành công, chuyển STATE = 'COMMIT'.")
 
-    # PHASE 2: COMMIT
-    with sqlite3.connect(DB_A_PATH) as conn_a:
-        cursor = conn_a.cursor()
-        cursor.execute("UPDATE Tx_Logs SET state = 'COMMIT' WHERE tx_id = ?", (tx_id,))
-        conn_a.commit()
-        ghi_log("[Bank_A] State: COMMIT")
+        if chon_kb == '3':
+            ghi_log(f"[{tx_id}] LỖI: Không thể COMMIT ở B do thiếu trạng thái READY.")
+        else:
+            with sqlite3.connect(DB_B_PATH) as conn_b:
+                conn_b.execute("UPDATE Accounts SET balance = balance + ? WHERE account_number = ?", (so_tien_chuyen, stk_nhan))
+                conn_b.execute("UPDATE Tx_Logs SET state = 'COMMIT' WHERE tx_id = ?", (tx_id,))
+                conn_b.commit()
+                ghi_log(f"[{tx_id}] Bank_B: Cộng tiền thành công, chuyển STATE = 'COMMIT'.")
 
-    with sqlite3.connect(DB_B_PATH) as conn_b:
-        cursor = conn_b.cursor()
-        cursor.execute("UPDATE Accounts SET balance = balance + ? WHERE account_number = ?", (so_tien_chuyen, stk_nhan))
-        cursor.execute("UPDATE Tx_Logs SET state = 'COMMIT' WHERE tx_id = ?", (tx_id,))
-        conn_b.commit()
-        ghi_log(f"[Bank_B] State: COMMIT")
+                print("\n==================================================")
+                print(" GIAO DỊCH XỬ LÝ THÀNH CÔNG!")
+                print("==================================================")
+            
 
-    _, so_du_a_sau = lay_thong_tin_tk_bank_a()
-    _, so_du_b_sau = kiem_tra_tk_bank_b(stk_nhan)
-    
-    print("\n==================================================")
-    print(" GIAO DỊCH XỬ LÝ THÀNH CÔNG - TỔNG KẾT SỐ DƯ MỚI")
-    print("==================================================")
-    print(f" Ngân hàng A ({ten_a}) : {so_du_a} -> {so_du_a_sau}$ (Đã trừ {so_tien_chuyen}$)")
-    print(f" Ngân hàng B ({stk_nhan}) : {so_du_b_truoc} -> {so_du_b_sau}$ (Đã cộng {so_tien_chuyen}$)")
-    print("==================================================")
-    print("Hệ thống đã lưu cập nhật xuống file database thực tế.")
+
+        input("\nNhấn Enter để tiếp tục giao dịch mới...")
 
 if __name__ == "__main__":
     main()
+    
