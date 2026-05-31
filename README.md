@@ -20,14 +20,14 @@
 
 ## Kịch bản lỗi (Coordinator Crash) & Khả năng phục hồi
 1. Mô phỏng lỗi: Khi chọn Kịch bản , hệ thống sẽ giả lập sự cố Điều phối viên bị sập nguồn (Crash):
-   -Kịch bản 2 (Coordinator Crash at Ready): Điều phối viên sập nguồn ngay sau khi các Participant đã ở trạng thái READY. Dữ liệu tại hai ngân hàng bị "treo".
-   -Kịch bản 3 (Partial Commit): Bank A đã hoàn tất COMMIT nhưng Bank B chưa thể thực hiện khởi tạo do không nhận được phản hồi.
-   -Kịch bản 4 (Split-Brain/Illegal Commit): Phát hiện trạng thái không nhất quán (Bank A chưa chuyển trạng thái commit nhưng Bank B lạm quyền COMMIT). Hệ thống tự động kích hoạt trạng thái WARNING.
-   -Kịch bản 5 (Abort-Commit Mismatch): Xung đột giữa trạng thái hủy (ABORT) của Bank A và hoàn tất (COMMIT) của Bank B.
+   - Kịch bản 2 (Coordinator Crash at Ready): Điều phối viên sập nguồn ngay sau khi các Participant đã ở trạng thái READY. Dữ liệu tại hai ngân hàng bị "treo".
+   - Kịch bản 3 (Partial Commit): Bank A đã hoàn tất COMMIT nhưng Bank B chưa thể thực hiện khởi tạo do không nhận được phản hồi.
+   - Kịch bản 4 (Split-Brain/Illegal Commit): Phát hiện trạng thái không nhất quán (Bank A chưa chuyển trạng thái commit nhưng Bank B lạm quyền COMMIT). Hệ thống tự động kích hoạt trạng thái WARNING.
+   - Kịch bản 5 (Abort-Commit Mismatch): Xung đột giữa trạng thái hủy (ABORT) của Bank A và hoàn tất (COMMIT) của Bank B.
 2. Tự động phục hồi (Recovery): Khi khởi động lại chương trình (python main.py), hệ thống sẽ tự động quét giao dịch trong Tx_Logs, phát hiện giao dịch bị treo
    và thực hiện phục hồi động chuyển trạng thái để đồng bộ dữ liệu:
-   -Quét trạng thái (State Scanning): Hệ thống quét bảng Tx_Logs trên cả hai Node (Bank A và Bank B) để tìm các giao dịch chưa kết thúc (đang ở trạng thái PREPARE, READY, hoặc WARNING).
-   -Phân tích sự thống nhất (Consistency Check):
+   - Quét trạng thái (State Scanning): Hệ thống quét bảng Tx_Logs trên cả hai Node (Bank A và Bank B) để tìm các giao dịch chưa kết thúc (đang ở trạng thái PREPARE, READY, hoặc WARNING).
+   - Phân tích sự thống nhất (Consistency Check):
       + Nếu giao dịch ở READY trên cả hai node: Hệ thống tự động thực hiện COMMIT để đồng bộ.
       + Nếu phát hiện trạng thái WARNING (vi phạm giao thức): Hệ thống khóa giao dịch và đưa vào hàng đợi cần can thiệp thủ công, đảm bảo không tự ý thay đổi dữ liệu khi chưa rõ ràng.
-   -Tự động cập nhật (Auto-Sync): Thực hiện lệnh COMMIT hoặc ROLLBACK đồng bộ dựa trên trạng thái đã ghi trong Log, đảm bảo dữ liệu quay về trạng thái nhất quán ACID.
+   - Tự động cập nhật (Auto-Sync): Thực hiện lệnh COMMIT hoặc ROLLBACK đồng bộ dựa trên trạng thái đã ghi trong Log, đảm bảo dữ liệu quay về trạng thái nhất quán ACID.
