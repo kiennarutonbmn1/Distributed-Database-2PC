@@ -61,6 +61,7 @@ def khoi_tao_database_sach():
                             tx_id TEXT PRIMARY KEY, from_account TEXT, to_account TEXT, amount REAL, state TEXT)''')
         cursor.execute("INSERT OR IGNORE INTO Accounts VALUES ('111111', 'Nguyen Van A', 1000.0)")
         cursor.execute("INSERT OR IGNORE INTO Accounts VALUES ('222222', 'Nguyen Van B', 0.0)")
+        cursor.execute("INSERT OR IGNORE INTO Accounts VALUES ('333333', 'Nguyen Van C', 20.0)")
         conn_a.commit()
 
     with sqlite3.connect(DB_B_PATH) as conn_b:
@@ -109,14 +110,31 @@ def kiem_tra_va_phuc_hoi_sau_crash():
 
             # 1. Kịch bản 2: Cả 2 đều READY -> Ép COMMIT toàn cục
             if state_a == 'READY' and state_b == 'READY':
+
                 with sqlite3.connect(DB_A_PATH) as conn_a2:
+
                     conn_a2.execute("UPDATE Tx_Logs SET state = 'COMMIT' WHERE tx_id = ?", (tx_id,))
+
                     ghi_log(f"[{tx_id}] Trạng thái Bank_A: READY -> COMMIT")    
+
                 with sqlite3.connect(DB_B_PATH) as conn_b2:
+
                     conn_b2.execute("UPDATE Accounts SET balance = balance + ? WHERE account_number = ?", (amount, to_acc))
+
                     conn_b2.execute("UPDATE Tx_Logs SET state = 'COMMIT' WHERE tx_id = ?", (tx_id,))
+
                     ghi_log(f"[{tx_id}] Trạng thái Bank_B: READY -> COMMIT")
+
                 ghi_log(f"Đã xử lý giao dịch [{tx_id}] thành công")
+
+            # 5 kịch bản 6: bên ngân hàng B hủy giao dịch thực hiện hoàn tiền
+            elif state_b == 'ABORT' and state_a != 'ABORT':
+                ghi_log(f"[{tx_id}] Phát hiện Bank B đã ABORT. Đang thực hiện hoàn tiền cho Bank A...")  
+                with sqlite3.connect(DB_A_PATH) as conn_a_fix:
+                    conn_a_fix.execute("UPDATE Accounts SET balance = balance + ? WHERE account_number = ?", (amount, from_acc))
+                    conn_a_fix.execute("UPDATE Tx_Logs SET state = 'ABORT' WHERE tx_id = ?", (tx_id,))
+                    conn_a_fix.commit()
+                ghi_log(f"[{tx_id}] Phục hồi thành công: Đã hoàn tiền {amount}$ vào tài khoản {from_acc} và chuyển Bank A sang ABORT.")
 
             # 2. Kịch bản 3: A đã COMMIT, B chưa -> Ép B COMMIT theo A
             elif state_a == 'COMMIT' and state_b != 'COMMIT':
@@ -149,7 +167,6 @@ def kiem_tra_va_phuc_hoi_sau_crash():
                     conn_a.commit()
                     ghi_log(f"[{tx_id}] Trạng thái Bank_B: --> WARNING")
                 ghi_log(f"[{tx_id}] CHUYỂN TRẠNG THÁI SANG: WARNING (Cần can thiệp thủ công)")
-    
 
 
             elif state_a == 'INITIAL' and state_b == 'INITIAL':
